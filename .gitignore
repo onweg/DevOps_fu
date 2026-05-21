@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+ml-service/models/*.pkl
+*.egg-info/
+.DS_Store

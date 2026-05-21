@@ -1,0 +1,87 @@
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB}
+      POSTGRES_USER:     ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - access-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ── ML service ─────────────────────────────────────────────────────────────
+  ml-service:
+    build: ./ml-service
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      MODEL_DIR:    /app/models
+      FLASK_ENV:    ${FLASK_ENV:-development}
+    volumes:
+      - ml_models:/app/models
+    networks:
+      - access-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:5001/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Flask API ──────────────────────────────────────────────────────────────
+  api:
+    build: ./api
+    ports:
+      - "5050:5000"
+    environment:
+      DATABASE_URL:   postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      ML_SERVICE_URL: http://ml-service:5001
+      ML_TIMEOUT_SEC: ${ML_TIMEOUT_SEC:-120}
+      FLASK_ENV:      ${FLASK_ENV:-development}
+    networks:
+      - access-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ml-service:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── pgAdmin ────────────────────────────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:8
+    ports:
+      - "8080:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL:    ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - access-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  access-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+  ml_models:

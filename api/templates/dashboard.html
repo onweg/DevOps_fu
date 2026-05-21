@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Access Security Monitor</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0a0e1a;
+      --sidebar:#0d1224;
+      --card:#111827;
+      --border:#1f2a40;
+      --accent:#06b6d4;
+      --accent2:#8b5cf6;
+      --accent3:#10b981;
+      --text:#e2e8f0;
+      --muted:#64748b;
+      --red:#ef4444;
+      --orange:#f97316;
+      --yellow:#eab308;
+    }
+    body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh;font-size:14px}
+
+    /* ── Sidebar ── */
+    .sidebar{width:260px;min-height:100vh;background:var(--sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;position:sticky;top:0;height:100vh;overflow-y:auto}
+    .sidebar-logo{padding:24px 20px 16px;border-bottom:1px solid var(--border)}
+    .sidebar-logo .icon{width:36px;height:36px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;margin-bottom:10px}
+    .sidebar-logo h2{font-size:13px;font-weight:700;color:var(--text);letter-spacing:.03em;line-height:1.4}
+    .sidebar-logo p{font-size:11px;color:var(--muted);margin-top:3px}
+
+    /* Stat blocks in sidebar */
+    .sidebar-stats{padding:16px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
+    .sidebar-stat{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:12px}
+    .sidebar-stat .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+    .sidebar-stat .info{flex:1;min-width:0}
+    .sidebar-stat .info .lbl{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .sidebar-stat .info .val{font-size:20px;font-weight:700;color:var(--text);line-height:1.2}
+
+    /* Service status */
+    .sidebar-services{padding:16px;border-bottom:1px solid var(--border)}
+    .sidebar-services h4{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:10px}
+    .svc{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)}
+    .svc:last-child{border-bottom:none}
+    .svc .name{font-size:12px;color:var(--text)}
+    .svc .pill{font-size:10px;padding:2px 8px;border-radius:99px;font-weight:600}
+    .pill-up{background:#052e16;color:#4ade80}
+    .pill-down{background:#450a0a;color:#fca5a5}
+
+    /* Actions in sidebar */
+    .sidebar-actions{padding:16px;margin-top:auto;border-top:1px solid var(--border)}
+    .sidebar-actions h4{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:10px}
+    .sbtn{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;margin-bottom:6px;transition:opacity .15s;text-align:left}
+    .sbtn:last-child{margin-bottom:0}
+    .sbtn .ic{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+    .sbtn-generate{background:#0c2233;color:#38bdf8}.sbtn-generate .ic{background:#0ea5e9}
+    .sbtn-train{background:#130c2a;color:#c4b5fd}.sbtn-train .ic{background:#8b5cf6}
+    .sbtn-analyze{background:#052e16;color:#6ee7b7}.sbtn-analyze .ic{background:#10b981}
+    .sbtn-refresh{background:#1a1208;color:#fcd34d}.sbtn-refresh .ic{background:#d97706}
+    .sbtn-clear{background:#2a0a0a;color:#fca5a5}.sbtn-clear .ic{background:#dc2626}
+    .sbtn:disabled{opacity:.4;cursor:not-allowed}
+    .sbtn:hover:not(:disabled){opacity:.8}
+
+    /* ── Main area ── */
+    .main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+    /* Topbar */
+    .topbar{background:var(--sidebar);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+    .topbar h1{font-size:15px;font-weight:600;color:var(--text)}
+    .topbar-right{display:flex;align-items:center;gap:12px}
+    #status-msg{font-size:12px;color:var(--muted)}
+    #status-msg.ok{color:#4ade80}
+    #status-msg.err{color:var(--red)}
+    #alert-indicator{display:none;background:var(--red);color:#fff;font-size:11px;font-weight:600;padding:3px 10px;border-radius:99px;animation:pulse 2s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+
+    /* Content */
+    .content{padding:24px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:20px}
+
+    /* Charts row — full width then smaller */
+    .chart-row{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+    @media(max-width:1100px){.chart-row{grid-template-columns:1fr}}
+
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px}
+    .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+    .card-header h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);display:flex;align-items:center;gap:8px}
+    .card-header h3::before{content:'';width:3px;height:14px;border-radius:2px;background:var(--accent);display:inline-block}
+    .card canvas{max-height:260px}
+
+    /* Tabs */
+    .tabs{display:flex;gap:4px;background:var(--bg);border-radius:8px;padding:3px;margin-bottom:16px;width:fit-content}
+    .tab{padding:6px 14px;border-radius:6px;border:none;background:transparent;color:var(--muted);font-size:12px;cursor:pointer;font-weight:500;transition:all .15s}
+    .tab.active{background:var(--card);color:var(--text);border:1px solid var(--border)}
+
+    /* Tables */
+    .tbl-wrap{overflow-x:auto}
+    table{width:100%;border-collapse:collapse;font-size:12px}
+    thead tr{border-bottom:1px solid var(--border)}
+    th{color:var(--muted);font-weight:500;text-align:left;padding:8px 10px;white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+    td{padding:9px 10px;border-bottom:1px solid #0f172a;vertical-align:middle}
+    tbody tr:last-child td{border-bottom:none}
+    tbody tr:hover td{background:#0f1929}
+
+    /* Badges */
+    .badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600}
+    .b-normal{background:#052e16;color:#4ade80}
+    .b-credential_stuffing{background:#1e1b4b;color:#a5b4fc}
+    .b-token_theft{background:#2e1065;color:#d8b4fe}
+    .b-api_abuse{background:#083344;color:#67e8f9}
+    .b-brute_force{background:#450a0a;color:#fca5a5}
+    .b-oauth_hijack{background:#3b0764;color:#f0abfc}
+    .b-CRITICAL{background:#450a0a;color:#fca5a5}
+    .b-HIGH{background:#431407;color:#fdba74}
+    .b-MEDIUM{background:#3f3206;color:#fef08a}
+
+    .agree{color:#4ade80;font-size:13px}
+    .disagree{color:var(--muted);font-size:13px}
+
+    /* Scrollbar */
+    ::-webkit-scrollbar{width:5px;height:5px}
+    ::-webkit-scrollbar-track{background:var(--bg)}
+    ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+  </style>
+</head>
+<body>
+
+<!-- ══ SIDEBAR ══════════════════════════════════════════════════════════════ -->
+<aside class="sidebar">
+
+  <div class="sidebar-logo">
+    <div class="icon">🛡</div>
+    <h2>Access Security Monitor</h2>
+    <p>Несанкционированный доступ</p>
+  </div>
+
+  <!-- Stats -->
+  <div class="sidebar-stats">
+    <div class="sidebar-stat">
+      <div class="dot" style="background:#06b6d4"></div>
+      <div class="info">
+        <div class="lbl">Событий доступа</div>
+        <div class="val" id="s-events">{{ stats.get('total_events', 0) }}</div>
+      </div>
+    </div>
+    <div class="sidebar-stat">
+      <div class="dot" style="background:#8b5cf6"></div>
+      <div class="info">
+        <div class="lbl">Детекций</div>
+        <div class="val" id="s-detections">{{ stats.get('total_detections', 0) }}</div>
+      </div>
+    </div>
+    <div class="sidebar-stat">
+      <div class="dot" style="background:#ef4444"></div>
+      <div class="info">
+        <div class="lbl">Активных алертов</div>
+        <div class="val" id="s-alerts" style="color:#ef4444">{{ stats.get('active_alerts', 0) }}</div>
+      </div>
+    </div>
+    <div class="sidebar-stat">
+      <div class="dot" style="background:#10b981"></div>
+      <div class="info">
+        <div class="lbl">Доверенных сервисов</div>
+        <div class="val" id="s-services">{{ stats.get('trusted_services', 0) }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Service status -->
+  <div class="sidebar-services">
+    <h4>Статус сервисов</h4>
+    <div class="svc"><span class="name">API</span><span class="pill pill-up" id="svc-api">up</span></div>
+    <div class="svc"><span class="name">База данных</span><span class="pill" id="svc-db">—</span></div>
+    <div class="svc"><span class="name">ML сервис</span><span class="pill" id="svc-ml">—</span></div>
+  </div>
+
+  <!-- Actions -->
+  <div class="sidebar-actions">
+    <h4>Управление</h4>
+    <button class="sbtn sbtn-generate" onclick="generateData()">
+      <span class="ic">⚡</span>Генерировать данные
+    </button>
+    <button class="sbtn sbtn-train" id="btn-train" onclick="trainModels()">
+      <span class="ic">🧠</span>Обучить модели
+    </button>
+    <button class="sbtn sbtn-analyze" onclick="analyzeThreats()">
+      <span class="ic">🔍</span>Анализировать угрозы
+    </button>
+    <button class="sbtn sbtn-refresh" onclick="refreshAll()">
+      <span class="ic">↻</span>Обновить данные
+    </button>
+    <button class="sbtn sbtn-clear" onclick="clearData()">
+      <span class="ic">✕</span>Очистить данные
+    </button>
+  </div>
+
+</aside>
+
+<!-- ══ MAIN ══════════════════════════════════════════════════════════════════ -->
+<div class="main">
+
+  <div class="topbar">
+    <h1>Мониторинг несанкционированного доступа через сторонние сервисы</h1>
+    <div class="topbar-right">
+      <span id="status-msg">Загрузка…</span>
+      <span id="alert-indicator">⚠ Угрозы обнаружены</span>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- Charts -->
+    <div class="chart-row">
+      <div class="card">
+        <div class="card-header">
+          <h3>Распределение угроз по типам</h3>
+        </div>
+        <canvas id="chart-threats"></canvas>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h3>Точность моделей</h3>
+        </div>
+        <canvas id="chart-accuracy"></canvas>
+      </div>
+    </div>
+
+    <!-- Tables with tabs -->
+    <div class="card">
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('detections', this)">Последние детекции</button>
+        <button class="tab" onclick="switchTab('logs', this)">Журнал активности</button>
+      </div>
+
+      <div id="tab-detections" class="tbl-wrap">
+        <table id="tbl-threats">
+          <thead><tr>
+            <th>ID</th>
+            <th>Финальный вердикт</th>
+            <th>GradientBoosting</th>
+            <th>MLP</th>
+            <th>K-Means</th>
+            <th>Уверенность</th>
+            <th>Согласие</th>
+            <th>Время</th>
+          </tr></thead>
+          <tbody>
+            <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">Нет данных — запустите анализ</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div id="tab-logs" class="tbl-wrap" style="display:none">
+        <table id="tbl-logs">
+          <thead><tr>
+            <th>Уровень</th><th>Действие</th><th>Сообщение</th><th>Время</th>
+          </tr></thead>
+          <tbody>
+            <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px">Нет данных</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<script>
+// ── Threat colour map ─────────────────────────────────────────────────────────
+const TC = {
+  normal:               '#06b6d4',
+  credential_stuffing:  '#818cf8',
+  token_theft:          '#a78bfa',
+  api_abuse:            '#22d3ee',
+  brute_force:          '#f87171',
+  oauth_hijack:         '#e879f9',
+};
+
+// ── Charts ────────────────────────────────────────────────────────────────────
+let chartThreats = null, chartAccuracy = null;
+
+function initCharts() {
+  const gridColor = '#1f2a40';
+  const tickColor = '#64748b';
+
+  chartThreats = new Chart(document.getElementById('chart-threats'), {
+    type: 'bar',
+    data: { labels: [], datasets: [{ data: [], backgroundColor: [], borderRadius: 6, borderSkipped: false }] },
+    options: {
+      indexAxis: 'y',
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: tickColor }, grid: { color: gridColor } },
+        y: { ticks: { color: tickColor }, grid: { display: false } },
+      },
+    },
+  });
+
+  chartAccuracy = new Chart(document.getElementById('chart-accuracy'), {
+    type: 'doughnut',
+    data: {
+      labels: ['GradientBoosting', 'MLP', 'K-Means'],
+      datasets: [{
+        data: [0, 0, 0],
+        backgroundColor: ['#06b6d4', '#8b5cf6', '#10b981'],
+        borderWidth: 0,
+        hoverOffset: 6,
+      }],
+    },
+    options: {
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { color: '#94a3b8', font: { size: 11 }, padding: 12 },
+        },
+        tooltip: {
+          callbacks: { label: ctx => ` ${ctx.label}: ${(ctx.raw * 100).toFixed(1)}%` }
+        },
+      },
+      cutout: '65%',
+    },
+  });
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab-detections').style.display = name === 'detections' ? '' : 'none';
+  document.getElementById('tab-logs').style.display       = name === 'logs'       ? '' : 'none';
+}
+
+// ── Status helpers ────────────────────────────────────────────────────────────
+function setStatus(msg, state = 'normal') {
+  const el = document.getElementById('status-msg');
+  el.textContent = msg;
+  el.className = state === 'ok' ? 'ok' : state === 'err' ? 'err' : '';
+}
+
+function setPill(id, text, up) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'pill ' + (up ? 'pill-up' : 'pill-down');
+}
+
+// ── Fetch helper ──────────────────────────────────────────────────────────────
+async function api(url, method = 'GET', body = null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(url, opts);
+  return r.json();
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+async function generateData() {
+  setStatus('Генерация данных…');
+  const d = await api('/api/data/generate', 'POST', { count: 1000 });
+  setStatus(d.message || d.error, d.status === 'success' ? 'ok' : 'err');
+  refreshStats();
+}
+
+async function trainModels() {
+  const btn = document.getElementById('btn-train');
+  btn.disabled = true;
+  setStatus('Обучение моделей… (~30–60 сек)');
+  const d = await api('/api/analysis/train', 'POST');
+  btn.disabled = false;
+  setStatus(d.message || d.error, d.status === 'success' ? 'ok' : 'err');
+  loadAccuracy();
+}
+
+async function analyzeThreats() {
+  setStatus('Анализ угроз…');
+  const d = await api('/api/analysis/analyze', 'POST');
+  setStatus(d.message || d.error, d.status === 'success' ? 'ok' : 'err');
+  loadThreatsChart();
+  loadThreatsTable();
+  refreshStats();
+}
+
+async function clearData() {
+  if (!confirm('Удалить все события и детекции?')) return;
+  const d = await api('/api/data/events', 'DELETE');
+  setStatus(d.message || d.error, d.status === 'success' ? 'ok' : 'err');
+  refreshAll();
+}
+
+// ── Data loaders ──────────────────────────────────────────────────────────────
+async function refreshStats() {
+  const d = await api('/api/status');
+  if (!d.database) return;
+  document.getElementById('s-events').textContent     = d.database.total_events  ?? '—';
+  document.getElementById('s-detections').textContent = d.database.total_threats ?? '—';
+  document.getElementById('s-alerts').textContent     = d.database.active_alerts ?? '—';
+
+  const hasAlerts = d.database.active_alerts > 0;
+  document.getElementById('alert-indicator').style.display = hasAlerts ? 'inline-block' : 'none';
+
+  setPill('svc-db', d.services.database === 'up' ? 'up' : 'down', d.services.database === 'up');
+  setPill('svc-ml', d.services.ml_service === 'up' ? 'up' : 'down', d.services.ml_service === 'up');
+}
+
+async function loadAccuracy() {
+  const d = await api('/api/analysis/metrics');
+  if (!d.models) return;
+  const order = ['gradient_boosting', 'mlp', 'kmeans'];
+  chartAccuracy.data.datasets[0].data = order.map(k => d.models[k]?.accuracy ?? 0);
+  chartAccuracy.update();
+}
+
+async function loadThreatsChart() {
+  const d = await api('/api/analysis/summary');
+  if (!d.threat_distribution) return;
+  const labels = d.threat_distribution.map(r => r.threat_type);
+  const values = d.threat_distribution.map(r => Number(r.count));
+  const colors = labels.map(l => TC[l] || '#94a3b8');
+  chartThreats.data.labels = labels;
+  chartThreats.data.datasets[0].data = values;
+  chartThreats.data.datasets[0].backgroundColor = colors;
+  chartThreats.update();
+}
+
+async function loadThreatsTable() {
+  const d = await api('/api/analysis/threats?limit=20');
+  const tbody = document.querySelector('#tbl-threats tbody');
+  if (!d.threats || d.threats.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">Нет данных — запустите анализ</td></tr>';
+    return;
+  }
+  tbody.innerHTML = d.threats.map(t => `
+    <tr>
+      <td style="color:var(--muted)">${t.id}</td>
+      <td><span class="badge b-${t.final_label_name}">${t.final_label_name.replace(/_/g,' ')}</span></td>
+      <td><span class="badge b-${t.gb_label_name}">${t.gb_label_name.replace(/_/g,' ')}</span></td>
+      <td><span class="badge b-${t.mlp_label_name}">${t.mlp_label_name.replace(/_/g,' ')}</span></td>
+      <td><span class="badge b-${t.km_label_name}">${t.km_label_name.replace(/_/g,' ')}</span></td>
+      <td><b>${(t.confidence*100).toFixed(1)}%</b></td>
+      <td class="${t.model_agreement ? 'agree' : 'disagree'}">${t.model_agreement ? '✓' : '⊘'}</td>
+      <td style="color:var(--muted)">${new Date(t.detected_at).toLocaleString('ru')}</td>
+    </tr>
+  `).join('');
+}
+
+async function loadLogs() {
+  const d = await api('/api/logs?limit=15');
+  const tbody = document.querySelector('#tbl-logs tbody');
+  if (!d.logs || d.logs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px">Нет данных</td></tr>';
+    return;
+  }
+  const LC = { INFO:'#38bdf8', WARNING:'#fbbf24', ALERT:'#f87171', ERROR:'#f87171' };
+  tbody.innerHTML = d.logs.map(l => `
+    <tr>
+      <td style="color:${LC[l.level]||'#94a3b8'};font-weight:600">${l.level}</td>
+      <td style="color:var(--muted)">${l.action}</td>
+      <td>${l.message}</td>
+      <td style="color:var(--muted);white-space:nowrap">${new Date(l.created_at).toLocaleString('ru')}</td>
+    </tr>
+  `).join('');
+}
+
+async function refreshAll() {
+  await Promise.all([refreshStats(), loadThreatsChart(), loadAccuracy(), loadThreatsTable(), loadLogs()]);
+  setStatus('Данные обновлены', 'ok');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  initCharts();
+  refreshAll();
+  setInterval(refreshStats, 30_000);
+});
+</script>
+</body>
+</html>
